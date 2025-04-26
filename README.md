@@ -19,10 +19,14 @@
 
 ```bash
 pip install -r requirements.txt
+```
+
+2. Запустить сервер:
+
+```bash
 uvicorn main:app --reload
 ```
 
----
 ---
 
 ## 📦 Стек технологий
