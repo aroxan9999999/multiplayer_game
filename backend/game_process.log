@@ -1,0 +1,15 @@
+[2025-04-25 11:47:45,260] ERROR — Error adding player test11: 'str' object has no attribute '_sa_instance_state'
+[2025-04-25 11:47:48,666] ERROR — Error adding player test11: 'str' object has no attribute '_sa_instance_state'
+[2025-04-25 11:48:09,084] ERROR — Error adding player test11: 'str' object has no attribute '_sa_instance_state'
+[2025-04-25 12:00:35,461] ERROR — Error creating game: (psycopg2.errors.UndefinedTable) relation "games" does not exist
+LINE 2: FROM games 
+             ^
+
+[SQL: SELECT games.id AS games_id, games.started_at AS games_started_at, games.is_active AS games_is_active, games.game_players AS games_game_players, games.clicked_cells AS games_clicked_cells, games.total_clicks AS games_total_clicks, games.winners AS games_winners, games.game_state AS games_game_state 
+FROM games 
+WHERE games.is_active = false 
+ LIMIT %(param_1)s]
+[parameters: {'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+[2025-04-26 11:57:41,846] ERROR — Ошибка регистрации клика: 'User' object has no attribute 'failed_clicks'
+[2025-04-26 11:58:53,694] ERROR — Ошибка регистрации клика: 'User' object has no attribute 'failed_clicks'

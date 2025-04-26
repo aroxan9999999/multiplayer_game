@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Игровое лобби</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Arial', sans-serif;
+            color: white;
+        }
+
+        .lobby-container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            backdrop-filter: blur(10px);
+            width: 400px;
+            max-width: 90%;
+        }
+
+        h1 {
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .players-counter {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 1rem 0;
+            text-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .join-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+            margin-top: 1rem;
+        }
+
+        .join-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
+            background: #45a049;
+        }
+
+        .join-btn:active {
+            transform: translateY(0);
+        }
+
+        .join-btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .status-text {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 1rem 0;
+        }
+
+        .color-tile {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .color-tile:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .color-tile.selected {
+            border: 2px solid white;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
+        }
+
+        .color-tile.unavailable {
+            opacity: 0.5;
+            cursor: not-allowed;
+            position: relative;
+        }
+
+        .color-tile.unavailable::after {
+            content: "✖";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .player-status {
+            margin-top: 1rem;
+            padding: 0.5rem;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 0.8rem;
+        }
+
+        .connected {
+            background: #4CAF50;
+        }
+
+        .disconnected {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status disconnected" id="connectionStatus">Disconnected</div>
+
+    <div class="lobby-container">
+        <h1>Ожидание игроков</h1>
+        <div class="players-counter">
+            <span id="count">{{ count }}</span>/4
+        </div>
+
+        <!-- Блок выбора цвета -->
+        <div id="colorSelection" style="display: none;">
+            <h3>Выберите цвет</h3>
+            <div class="color-grid" id="colorGrid"></div>
+            <button class="join-btn" id="confirmBtn" disabled>Подтвердить выбор</button>
+        </div>
+
+        <!-- Блок статуса игрока -->
+        <div id="playerStatus" class="player-status" style="display: none;">
+            Вы готовы к игре! Ожидаем других игроков...
+        </div>
+
+        <p class="status-text">Как только соберутся 4 игрока - игра начнётся автоматически</p>
+    </div>
+<script>
+    // Получаем данные из шаблона
+    const username = "{{ username }}";
+    const is_active = parseInt("{{ is_active }}");
+    const color = "{{ color }}" === "None" ? null : "{{ color }}";
+    const game_id = "{{ game_id }}";
+    const available_colors = JSON.parse('{{ available_colors|tojson|safe }}');
+    const initial_count = parseInt("{{ count }}");
+
+    console.log("Initial data from server:", {
+        username,
+        is_active,
+        color,
+        game_id,
+        available_colors,
+        initial_count
+    });
+
+    // Глобальные переменные
+    let selectedColor = null;
+    let currentPlayers = [];
+    const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+    // Обработчик открытия соединения
+    socket.onopen = () => {
+        console.log("WebSocket connected");
+        document.getElementById("connectionStatus").className = "connection-status connected";
+        document.getElementById("connectionStatus").textContent = "Connected";
+
+        // Инициализируем счетчик из шаблона
+        document.getElementById("count").textContent = initial_count;
+
+        if (is_active === 0 && color === null) {
+            console.log("New player detected - waiting for color selection");
+        }
+        else if (is_active === 1 && color) {
+            console.log("Existing player detected - sending status update");
+            socket.send(JSON.stringify({
+                action: "update_status",
+                username: username,
+                color: color
+            }));
+        }
+    };
+
+    // Обработчик входящих сообщений
+    socket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            console.log("Received message:", data);
+
+            if (data.type === "lobby_update") {
+                handleLobbyUpdate(data);
+            }
+            else if (data.type === "game_start") {
+                handleGameStart(data);
+            }
+            else if (data.type === "error") {
+                showError(data.error);
+            }
+        } catch (e) {
+            console.error("Error parsing message:", e);
+        }
+    };
+
+    // Обработка обновления лобби
+    function handleLobbyUpdate(data) {
+        console.log("Processing lobby update:", {
+            players_count: data.players_count,
+            players: data.players,
+            available_colors: data.available_colors
+        });
+
+        // Обновляем счетчик игроков
+        document.getElementById("count").textContent = data.players_count;
+
+        // Сохраняем текущий список игроков
+        currentPlayers = data.players || [];
+
+        // Для нового игрока (который еще не выбрал цвет)
+        if (is_active === 0 && color === null) {
+            // Обновляем только доступные цвета
+            updateColorGrid(data.available_colors, currentPlayers);
+
+            // Если это ответ на наш join (мы только что выбрали цвет)
+            if (data.status === 200 && selectedColor) {
+                hideColorSelection();
+            }
+        }
+        // Для наблюдателей (которые уже в игре)
+        else if (is_active === 1 && color) {
+            // Просто обновляем счетчик, цвета не трогаем
+            console.log("Observer - only update counter");
+        }
+    }
+
+    // Обновление сетки цветов
+    function updateColorGrid(colors, players) {
+        console.log("Updating color grid:", {
+            available_colors: colors,
+            players: players
+        });
+
+        const grid = document.getElementById("colorGrid");
+        grid.innerHTML = "";
+
+        colors.forEach(color => {
+            const tile = document.createElement("div");
+            tile.className = "color-tile";
+            tile.style.backgroundColor = color;
+            tile.title = color;
+
+            // Проверяем занятость цвета
+            const isTaken = players.some(p => p[1].toLowerCase() === color.toLowerCase());
+
+            if (isTaken) {
+                tile.classList.add("unavailable");
+                console.log(`Color ${color} marked as unavailable`);
+            } else {
+                tile.addEventListener("click", () => selectColor(color, tile));
+            }
+
+            grid.appendChild(tile);
+        });
+    }
+
+    // Выбор цвета
+    function selectColor(color, tile) {
+        document.querySelectorAll(".color-tile").forEach(t => {
+            t.classList.remove("selected");
+        });
+        tile.classList.add("selected");
+        selectedColor = color;
+        document.getElementById("confirmBtn").disabled = false;
+        console.log(`Selected color: ${color}`);
+    }
+
+    // Скрытие выбора цвета
+    function hideColorSelection() {
+        console.log(`Hiding color selection for ${username}`);
+        document.getElementById("colorSelection").style.display = "none";
+        document.getElementById("playerStatus").style.display = "block";
+        document.getElementById("playerStatus").textContent =
+            `Вы выбрали цвет: ${selectedColor}. Ожидаем других игроков...`;
+    }
+
+    // Обработка начала игры
+    function handleGameStart(data) {
+        console.log("Game starting with players:", data.players);
+        const isPlayerInGame = data.players.some(p => p[0] === username);
+
+        if (isPlayerInGame) {
+            console.log(`Redirecting ${username} to game...`);
+            document.body.style.animation = "fadeOut 0.5s forwards";
+            setTimeout(() => {
+                window.location.href = `/game/${data.game_id}`;
+            }, 500);
+        } else {
+            console.log(`${username} not in game, resetting...`);
+            resetForObserver();
+        }
+    }
+
+    // Сброс состояния для наблюдателей
+    function resetForObserver() {
+        console.log("Resetting interface for observer");
+        document.getElementById("playerStatus").style.display = "none";
+        document.getElementById("colorSelection").style.display = "block";
+        document.getElementById("confirmBtn").disabled = true;
+        selectedColor = null;
+        updateColorGrid(available_colors, currentPlayers);
+    }
+
+    // Показать ошибку
+    function showError(message) {
+        console.error("Error:", message);
+        alert(`Ошибка: ${message}`);
+
+        if (message.includes("color") || message.includes("цвет")) {
+            document.getElementById("confirmBtn").disabled = true;
+            selectedColor = null;
+        }
+    }
+
+    // Обработчики ошибок и закрытия соединения
+    socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        updateConnectionStatus(false);
+    };
+
+    socket.onclose = (event) => {
+        console.log("WebSocket disconnected:", event.reason);
+        updateConnectionStatus(false);
+    };
+
+    function updateConnectionStatus(connected) {
+        const status = document.getElementById("connectionStatus");
+        status.className = connected ? "connection-status connected" : "connection-status disconnected";
+        status.textContent = connected ? "Connected" : "Disconnected";
+    }
+
+    // Инициализация
+    document.addEventListener("DOMContentLoaded", () => {
+        console.log("Initializing interface...");
+
+        // Для новых игроков
+        if (is_active === 0 && color === null) {
+            console.log("Setting up for new player");
+            document.getElementById("colorSelection").style.display = "block";
+            updateColorGrid(available_colors, currentPlayers);
+
+            document.getElementById("confirmBtn").addEventListener("click", () => {
+                if (selectedColor) {
+                    console.log("Sending join request...");
+                    socket.send(JSON.stringify({
+                        action: "join",
+                        username: username,
+                        color: selectedColor
+                    }));
+                }
+            });
+        }
+        // Для игроков, уже выбравших цвет
+        else if (is_active === 1 && color) {
+            console.log("Setting up for existing player");
+            document.getElementById("playerStatus").style.display = "block";
+            document.getElementById("playerStatus").textContent =
+                `Вы уже в игре с цветом: ${color}. Ожидаем других игроков...`;
+        }
+    });
+
+    // Закрытие соединения при выходе
+    window.addEventListener("beforeunload", () => {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.close(1000, "User left the page");
+        }
+    });
+</script>
+
+</body>
+</html>
